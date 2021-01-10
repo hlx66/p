@@ -11,9 +11,12 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"syscall"
+	"time"
 
 	"github.com/labstack/echo"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/gridfs"
@@ -139,6 +142,13 @@ func stream(ctx echo.Context) error {
 		fmt.Printf("Invalid ID: %s\n", ctx.Param("id"))
 		return ctx.String(http.StatusInternalServerError, "Invalid ID")
 	}
+	fsFiles := db.Collection("fs.files")
+	ctxx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+	var result bson.M
+	err = fsFiles.FindOne(ctxx, bson.D{{"_id", id}}).Decode(&result)
+	if err != nil {
+		log.Fatal(err)
+	}
 	bucket, _ := gridfs.NewBucket(
 		db,
 	)
@@ -152,9 +162,10 @@ func stream(ctx echo.Context) error {
 		log.Fatal(err)
 		os.Exit(1)
 	}
-	//fmt.Println(gridFile)
-	//ctx.Response().Header().Set("Content-Length",
-	//ctx.Response().Header().Set("Content-Disposition", "inline; filename="+gridFile)
+	fmt.Println(result)
+	ctx.Response().Header().Set("Content-Length", strconv.FormatInt(result["length"].(int64), 10))
+	filename := result["filename"].(string)
+	ctx.Response().Header().Set("Content-Disposition", "inline; filename=\""+filename+"\"")
 
-	return ctx.Stream(http.StatusOK, mime.TypeByExtension(".jpg"), gridFile)
+	return ctx.Stream(http.StatusOK, mime.TypeByExtension(filename), gridFile)
 }
